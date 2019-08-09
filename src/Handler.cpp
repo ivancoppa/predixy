@@ -786,6 +786,7 @@ void Handler::handleResponse(ConnectConnection* s, Request* req, Response* res)
     }
     if (req->isInner()) {
         innerResponse(s, req, res);
+        logDebug("h INNER %d ignore req %ld res %ld", id(), req->id(), res->id());
         return;
     }
     auto sp = mProxy->serverPool();
@@ -938,6 +939,7 @@ void Handler::infoRequest(Request* req, const String& key)
 
     if (all || empty || key.equal("Proxy", true) || key.equal("Server", true)) {
         buf = buf->fappend("# %s\n", "Proxy");
+        buf = buf->fappend("redis_version:%s\n", _PREDIXY_VERSION_);
         buf = buf->fappend("Version:%s\n", _PREDIXY_VERSION_);
         buf = buf->fappend("Name:%s\n", mProxy->conf()->name());
         buf = buf->fappend("Bind:%s\n", mProxy->conf()->bind());
@@ -1223,6 +1225,7 @@ void Handler::configGetRequest(Request* req)
     SString<512> s;
     auto conf = mProxy->conf();
     auto log = Logger::gInst;
+    //handleResponse(nullptr, req, res);
 
 #define Append(name, fmt, ...) \
     if (all || key.equal(name, true)) {                             \
@@ -1248,6 +1251,7 @@ void Handler::configGetRequest(Request* req)
         Append("LogNoticeSample", "%d", log->logSample(LogLevel::Notice));
         Append("LogWarnSample", "%d", log->logSample(LogLevel::Warn));
         Append("LogErrorSample", "%d", log->logSample(LogLevel::Error));
+        Append("notify-keyspace-events", "%s", "Egx");
     } while (0);
     body.end().buf = buf;
     body.end().pos = buf->length();
@@ -1280,6 +1284,13 @@ void Handler::configSetRequest(Request* req)
         long m;
         if (Conf::parseMemory(m, val.data())) {
             AllocBase::setMaxMemory(m);
+            directResponse(req, Response::Ok);
+        } else {
+            directResponse(req, Response::ArgWrong);
+        }
+    } else if (key.equal("notify-keyspace-events", true)) {
+        int v;
+        if (sscanf(val.data(), "%s", &v) == 1 && v >= 0) {
             directResponse(req, Response::Ok);
         } else {
             directResponse(req, Response::ArgWrong);
